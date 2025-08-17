@@ -2,3 +2,4 @@
 from .s3_service import *
 from .sqs_service import *
 from .blender_service import *
+from .file_handling_service import *
