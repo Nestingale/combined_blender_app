@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Blender Settings
     BLENDER_SCRIPTS_PATH: str = "app/scripts"
     BLENDER_OUTPUT_PATH: str = "app/scripts/generated_files"
-    BLENDER_PATH: str = "blender"  # Default path to blender executable
+    BLENDER_PATH: str = "/usr/local/bin/blender"  # Default path to blender executable
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
