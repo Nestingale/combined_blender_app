@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     SQS_QUEUE_URL: str = "https://sqs.us-east-1.amazonaws.com/311504593279/EmailMarketing"
     
     # Blender Settings
-    BLENDER_SCRIPTS_PATH: str = "../scripts"
-    BLENDER_OUTPUT_PATH: str = "../scripts/generated_files"
+    BLENDER_SCRIPTS_PATH: str = "app/scripts"
+    BLENDER_OUTPUT_PATH: str = "app/scripts/generated_files"
     BLENDER_PATH: str = "blender"  # Default path to blender executable
     
     # Rate Limiting
