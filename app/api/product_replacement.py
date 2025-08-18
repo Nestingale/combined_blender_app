@@ -139,12 +139,12 @@ async def replace_product(request: ProductReplacementRequest):
             "--",  # Argument separator
             input_file_local_path,  # Local path to input file instead of S3 key
             "-d", output_dir,  # Working directory
-            f"--generate_mask",
-            f"--camera_json", json.dumps(request.camera_info),
-            f"--lighting_json", json.dumps(request.lighting_info),
-            f"--use_environment_map", json.dumps("studio.exr"),
-            f"--use_existing_camera",
-            f"--replace_product", json.dumps(request.replace_product_data)
+            f"--generate-mask",
+            f"--camera-json", json.dumps(request.camera_info),
+            f"--lighting-json", json.dumps(request.lighting_info),
+            f"--use-environment-map", json.dumps("studio.exr"),
+            f"--use-existing-camera",
+            f"--replace-product", json.dumps(request.replace_product_data)
         ]
 
         # Process the request with the new approach
