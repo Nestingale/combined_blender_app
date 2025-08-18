@@ -66,8 +66,7 @@ docker-compose.yml
 # Blender files
 *.blend1
 *.blend2
-blender_working_data/
-**/generated_files/
+
 
 # AWS
 .aws/

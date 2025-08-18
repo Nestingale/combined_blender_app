@@ -36,7 +36,9 @@ class FileHandlingService:
         try:
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
+
+            logger.debug(f"download_image_from_url_async: Created directory for file: {file_path}")
+
             # Download the file asynchronously
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=timeout) as response:

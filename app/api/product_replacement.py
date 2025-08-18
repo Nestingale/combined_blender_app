@@ -64,6 +64,11 @@ async def replace_product(request: ProductReplacementRequest):
         script_path = os.path.join(working_dir, 'blender_script.py')
         output_dir = os.path.join(working_dir, 'generated_files')
 
+        # Print all paths for debugging
+        logger.debug(f"Working directory: {working_dir}")
+        logger.debug(f"Script path: {script_path}")
+        logger.debug(f"Output directory: {output_dir}")
+
         # Create working directory if it doesn't exist
         os.makedirs(working_dir, exist_ok=True)
         os.makedirs(os.path.join(working_dir, 'input'), exist_ok=True)
