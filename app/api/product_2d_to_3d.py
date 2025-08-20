@@ -10,6 +10,7 @@ from app.core.monitoring import track_time, BLENDER_PROCESSING_TIME
 from app.services.s3_service import S3Service, S3ServiceError
 from app.services.sqs_service import SQSService
 from app.services.blender_service import process_blender_request_async, BlenderError, OutputFile
+from app.services.file_handling_service import FileHandlingService, ImageDownloadError
 from app.utils.file_utils import cleanup_processing_files
 
 settings = get_settings()
@@ -22,8 +23,8 @@ router = APIRouter()
 
 class Product2DTo3DRequest(BaseModel):
     product_type: str = Field(..., description="Type of product (rug or pillow)")
-    product_image_s3_path: str = Field(..., description="S3 path to the main product image")
-    product_image_s3_path2: Optional[str] = Field(None, description="S3 path to the secondary image (for pillows)")
+    product_image_s3_path: str = Field(..., description="S3 path or public URL to the main product image")
+    product_image_s3_path2: Optional[str] = Field(None, description="S3 path or public URL to the secondary image (for pillows)")
     product_sku_id: str = Field(..., description="Unique identifier for the product")
     output_s3_file_key: str = Field(..., description="S3 key for the output GLB file")
 
@@ -74,14 +75,40 @@ async def process_glb(request: Product2DTo3DRequest):
             input_files_s3.append(request.product_image_s3_path2)
             
         local_input_files = []
-        for i, s3_path in enumerate(input_files_s3):
-            file_name = f"input_{i}_{os.path.basename(s3_path)}"
+        for i, source_path in enumerate(input_files_s3):
+            file_name = f"input_{i}_{os.path.basename(source_path)}"
             local_path = os.path.join(working_dir, 'input', file_name)
             
-            logger.info(f"Downloading input file from S3: {s3_path} to {local_path}")
-            await s3_service.download_file_async(s3_path, local_path)
+            logger.info(f"Downloading input file: {source_path} to {local_path}")
+            
+            # Check if the input is a URL or an S3 key
+            if source_path.startswith(('http://', 'https://')):
+                # It's a URL, use FileHandlingService
+                try:
+                    await FileHandlingService.download_image_from_url_async(
+                        url=source_path, 
+                        file_path=local_path
+                    )
+                    logger.info(f"Successfully downloaded input file {i+1} from URL")
+                except ImageDownloadError as e:
+                    logger.error(f"Failed to download file from URL: {str(e)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to download input file: {str(e)}"
+                    )
+            else:
+                # It's an S3 key, use S3Service
+                try:
+                    await s3_service.download_file_async(source_path, local_path)
+                    logger.info(f"Successfully downloaded input file {i+1} from S3")
+                except S3ServiceError as e:
+                    logger.error(f"Failed to download file from S3: {str(e)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to download input file: {str(e)}"
+                    )
+                
             local_input_files.append(local_path)
-            logger.info(f"Successfully downloaded input file {i+1}")
 
         # Configure output files
         output_files = [
