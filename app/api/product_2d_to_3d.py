@@ -86,7 +86,7 @@ async def process_glb(request: Product2DTo3DRequest):
         # Configure output files
         output_files = [
             OutputFile(
-                local_path=os.path.join(output_dir, 'output.glb'),
+                local_path=os.path.join(working_dir, 'output.glb'), # TODO chnage it to output_dir
                 s3_key=request.output_s3_file_key,
                 file_type='glb'
             )
@@ -101,14 +101,16 @@ async def process_glb(request: Product2DTo3DRequest):
             "--",  # Argument separator
         ]
         
+          # Add additional parameters
+        blender_command.extend([f"{request.product_type}"])
+
         # Add local input files to command
         blender_command.extend(local_input_files)
         
         # Add working directory
-        blender_command.extend(["-d", working_dir])
+        #blender_command.extend(["-d", working_dir])
         
-        # Add additional parameters
-        blender_command.extend([f"--product_type", json.dumps(request.product_type)])
+      
 
         # Print blender_command for debugging
         logger.debug(f"Blender command: {blender_command}")
