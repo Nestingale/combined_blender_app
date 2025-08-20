@@ -167,7 +167,7 @@ async def replace_product(request: ProductReplacementRequest):
         }
 
     except BlenderError as e:
-        logger.error(f"Error processing request: {str(e)}")
+        logger.error(f"Error processing replaceProduct request: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

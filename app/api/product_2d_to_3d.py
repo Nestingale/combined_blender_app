@@ -56,10 +56,17 @@ async def process_glb(request: Product2DTo3DRequest):
         # Define working directory and paths
         working_dir = os.path.join(settings.BLENDER_SCRIPTS_PATH, 'product_2d_to_3d')
         script_path = os.path.join(working_dir, 'create_Rug_or_Pillow_GLB_public.py')
+        output_dir = os.path.join(working_dir, 'generated_files')
+
+          # Print all paths for debugging
+        logger.debug(f"Working directory: {working_dir}")
+        logger.debug(f"Script path: {script_path}")
+        logger.debug(f"Output directory: {output_dir}")
         
-        # Create working directory if it doesn't exist
+       # Create working directory if it doesn't exist
         os.makedirs(working_dir, exist_ok=True)
         os.makedirs(os.path.join(working_dir, 'input'), exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
         # Download input files from S3
         input_files_s3 = [request.product_image_s3_path]
@@ -79,7 +86,7 @@ async def process_glb(request: Product2DTo3DRequest):
         # Configure output files
         output_files = [
             OutputFile(
-                local_path=os.path.join(working_dir, 'output.glb'),
+                local_path=os.path.join(output_dir, 'output.glb'),
                 s3_key=request.output_s3_file_key,
                 file_type='glb'
             )
@@ -88,7 +95,7 @@ async def process_glb(request: Product2DTo3DRequest):
         # Construct Blender command as a list of arguments
         blender_path = settings.BLENDER_PATH if hasattr(settings, 'BLENDER_PATH') else 'blender'
         blender_command = [
-            blender_path,
+            "/usr/local/bin/blender",
             "--background",
             "--python", script_path,
             "--",  # Argument separator
@@ -102,6 +109,9 @@ async def process_glb(request: Product2DTo3DRequest):
         
         # Add additional parameters
         blender_command.extend([f"--product_type", json.dumps(request.product_type)])
+
+        # Print blender_command for debugging
+        logger.debug(f"Blender command: {blender_command}")
 
         # Process the request with the new approach
         processed_files = await process_blender_request_async(
@@ -123,7 +133,7 @@ async def process_glb(request: Product2DTo3DRequest):
         }
 
     except BlenderError as e:
-        logger.error(f"Error processing request: {str(e)}")
+        logger.error(f"Error processing 2D to 3D conversion request: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
