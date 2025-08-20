@@ -133,7 +133,7 @@ async def replace_product(request: ProductReplacementRequest):
         # Construct Blender command as a list of arguments
         blender_path = settings.BLENDER_PATH if hasattr(settings, 'BLENDER_PATH') else 'blender'
         blender_command = [
-            blender_path,
+            "/usr/local/bin/blender",
             "--background",
             "--python", script_path,
             "--",  # Argument separator
