@@ -108,22 +108,22 @@ async def replace_product(request: ProductReplacementRequest):
         # Configure output files
         output_files = [
             OutputFile(
-                local_path=os.path.join(output_dir, 'render.png'),
+                local_path=os.path.join(output_dir, 'room_render.png'),
                 s3_key=request.generated_2d_image_key,
                 file_type='png'
             ),
             OutputFile(
-                local_path=os.path.join(output_dir, 'all_masks.png'),
+                local_path=os.path.join(output_dir, 'mask_all_products.png'),
                 s3_key=request.all_masks_key,
                 file_type='png'
             ),
             OutputFile(
-                local_path=os.path.join(output_dir, 'target_mask.png'),
+                local_path=os.path.join(output_dir, f'mask_{request.product_sku_id}.png'),
                 s3_key=request.target_product_mask_key,
                 file_type='png'
             ),
             OutputFile(
-                local_path=os.path.join(output_dir, 'target_image.png'),
+                local_path=os.path.join(output_dir, f'individual_masked_{request.product_sku_id}.png'),
                 s3_key=request.target_product_image_key,
                 file_type='png'
             )
