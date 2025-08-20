@@ -62,8 +62,6 @@ async def process_blender_request_async(
                 result = subprocess.run(
                     blender_command,
                     check=True,
-                    capture_output=True,
-                    text=True,
                     timeout=3500  # 58.3 minutes in seconds
                 )
                 
