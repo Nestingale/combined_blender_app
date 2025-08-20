@@ -102,7 +102,7 @@ async def process_glb(request: Product2DTo3DRequest):
         ]
         
           # Add additional parameters
-        blender_command.extend([f"{request.product_type}"])
+        blender_command.extend([f"--{request.product_type}"])
 
         # Add local input files to command
         blender_command.extend(local_input_files)
