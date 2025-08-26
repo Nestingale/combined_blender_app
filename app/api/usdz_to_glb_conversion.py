@@ -85,7 +85,7 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
         # Construct Blender command
         blender_path = settings.BLENDER_PATH if hasattr(settings, 'BLENDER_PATH') else 'blender'
         blender_command = [
-            blender_path,
+            "/usr/local/bin/blender",
             "--background",
             "--python", blender_script_path,
             "--",  # Argument separator
