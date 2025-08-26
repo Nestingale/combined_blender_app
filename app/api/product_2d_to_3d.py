@@ -56,7 +56,7 @@ async def process_glb(request: Product2DTo3DRequest):
 
         # Define working directory and paths
         working_dir = os.path.join(settings.BLENDER_SCRIPTS_PATH, 'product_2d_to_3d')
-        script_path = os.path.join(working_dir, 'create_Rug_or_Pillow_GLB_public.py')
+        script_path = os.path.join(working_dir, 'create_Rug_or_Pillow_GLB_Aug3.py')
         output_dir = os.path.join(working_dir, 'generated_files')
 
           # Print all paths for debugging
