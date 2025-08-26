@@ -90,7 +90,7 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
             "--python", blender_script_path,
             "--",  # Argument separator
             input_file_path,  # Input file
-            f" {output_file_path}"
+            output_file_path
         ]
         
         # Configure output files
@@ -140,12 +140,6 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-    finally:
-        # Clean up the downloaded input file and local output files
-        await cleanup_processing_files(
-            input_files=[input_file_path, output_file_path],
-            output_files=output_files,
-            working_dir=work_dir
-        )
+  
 
 # The cleanup_files function is now in utils.file_utils module
