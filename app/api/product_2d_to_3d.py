@@ -16,7 +16,7 @@ from app.utils.file_utils import cleanup_processing_files
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-s3_service = S3Service(settings.S3_BUCKET_NAME, settings.AWS_REGION)
+s3_service = S3Service(default_bucket_name=settings.S3_BUCKET_NAME, region_name=settings.AWS_REGION)
 sqs_service = SQSService(settings.SQS_QUEUE_URL)
 router = APIRouter()
 
@@ -99,7 +99,7 @@ async def process_glb(request: Product2DTo3DRequest):
             else:
                 # It's an S3 key, use S3Service
                 try:
-                    await s3_service.download_file_async(source_path, local_path)
+                    await s3_service.download_file_async(source_path, local_path, bucket_name=settings.S3_BUCKET_NAME)
                     logger.info(f"Successfully downloaded input file {i+1} from S3")
                 except S3ServiceError as e:
                     logger.error(f"Failed to download file from S3: {str(e)}")
@@ -148,6 +148,24 @@ async def process_glb(request: Product2DTo3DRequest):
             blender_command=blender_command,
             output_files=output_files
         )
+        
+        # Upload output files to S3
+        uploaded_files = []
+        for file in processed_files:
+            try:
+                await s3_service.upload_file_async(
+                    file.local_path,
+                    file.s3_key,
+                    bucket_name=settings.S3_BUCKET_NAME
+                )
+                uploaded_files.append(file)
+                logger.info(f"Uploaded {file.local_path} to {file.s3_key}")
+            except S3ServiceError as e:
+                logger.error(f"Failed to upload output file {file.local_path}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to upload output file: {str(e)}"
+                )
 
         return {
             "status": "completed",
@@ -157,7 +175,7 @@ async def process_glb(request: Product2DTo3DRequest):
                     "type": file.file_type,
                     "s3_key": file.s3_key
                 }
-                for file in processed_files
+                for file in uploaded_files
             ]
         }
 

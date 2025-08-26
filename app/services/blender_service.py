@@ -7,13 +7,9 @@ import logging
 from dataclasses import dataclass
 
 from app.core.config import get_settings
-from app.services.s3_service import S3Service, S3ServiceError
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-
-# Initialize S3 service
-s3_service = S3Service(bucket_name=settings.S3_BUCKET_NAME, region_name=settings.AWS_REGION)
 
 @dataclass
 class OutputFile:
@@ -32,6 +28,8 @@ async def process_blender_request_async(
 ) -> List[OutputFile]:
     """
     Process a Blender request using a pre-constructed blender command.
+    This function runs Blender to generate output files but doesn't handle S3 uploads.
+    The API handlers are responsible for uploading the generated files to S3.
     
     Args:
         working_dir: Directory where processing will take place
@@ -39,7 +37,7 @@ async def process_blender_request_async(
         output_files: List of output file configurations
     
     Returns:
-        List of processed output files with their S3 locations.
+        List of processed output files that were successfully generated.
     """
     try:
         # Validate parameters
@@ -89,21 +87,14 @@ async def process_blender_request_async(
                     raise BlenderError(f"Failed to execute Blender: {str(e)}")
                 await asyncio.sleep(2 ** attempt)
 
-        # Upload output files to S3
+        # Check if output files were generated but don't upload them
         processed_files = []
         for output_file in output_files:
             if os.path.exists(output_file.local_path):
-                try:
-                    await s3_service.upload_file_async(
-                        output_file.local_path, 
-                        output_file.s3_key
-                    )
-                    processed_files.append(output_file)
-                    logger.info(f"Uploaded {output_file.local_path} to {output_file.s3_key}")
-                except S3ServiceError as e:
-                    raise BlenderError(f"Failed to upload output file {output_file.local_path}: {str(e)}")
+                processed_files.append(output_file)
+                logger.info(f"Generated output file {output_file.local_path}")
             else:
-                logger.warning(f"Output file {output_file.local_path} does not exist. Skipping upload.")
+                logger.warning(f"Output file {output_file.local_path} does not exist.")
 
         return processed_files
 

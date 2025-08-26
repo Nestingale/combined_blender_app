@@ -5,7 +5,7 @@ import json
 import os
 import logging
 from app.core.config import get_settings
-from app.services.s3_service import S3Service
+from app.services.s3_service import S3Service, S3ServiceError
 from app.services.sqs_service import SQSService
 from app.services.blender_service import process_blender_request_async, BlenderError, OutputFile
 from app.utils.file_utils import cleanup_processing_files
@@ -15,7 +15,7 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 # Initialize services
-s3_service = S3Service(settings.S3_BUCKET_NAME, settings.AWS_REGION)
+s3_service = S3Service(default_bucket_name=settings.S3_BUCKET_NAME, region_name=settings.AWS_REGION)
 sqs_service = SQSService(settings.SQS_QUEUE_URL)
 
 class CameraInfo(BaseModel):
@@ -79,7 +79,7 @@ async def generate_photo_realistic_view(
         os.makedirs(os.path.dirname(input_file_local_path), exist_ok=True)
         
         logger.info(f"Downloading input file from S3: {request.glb_image_key} to {input_file_local_path}")
-        await s3_service.download_file_async(request.glb_image_key, input_file_local_path)
+        await s3_service.download_file_async(request.glb_image_key, input_file_local_path, bucket_name=settings.S3_BUCKET_NAME)
         logger.info(f"Successfully downloaded input file")
 
         # Configure output files
@@ -119,6 +119,24 @@ async def generate_photo_realistic_view(
             blender_command=blender_command,
             output_files=output_files
         )
+        
+        # Upload output files to S3
+        uploaded_files = []
+        for file in processed_files:
+            try:
+                await s3_service.upload_file_async(
+                    file.local_path,
+                    file.s3_key,
+                    bucket_name=settings.S3_BUCKET_NAME
+                )
+                uploaded_files.append(file)
+                logger.info(f"Uploaded {file.local_path} to {file.s3_key}")
+            except S3ServiceError as e:
+                logger.error(f"Failed to upload output file {file.local_path}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to upload output file: {str(e)}"
+                )
 
         return {
             "status": "completed",
@@ -128,7 +146,7 @@ async def generate_photo_realistic_view(
                     "type": file.file_type,
                     "s3_key": file.s3_key
                 }
-                for file in processed_files
+                for file in uploaded_files
             ]
         }
 

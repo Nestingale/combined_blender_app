@@ -17,7 +17,7 @@ from app.utils.file_utils import cleanup_processing_files
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-s3_service = S3Service(settings.S3_PRODUCT_3D_ASSETS_BUCKET, settings.AWS_REGION)
+s3_service = S3Service(default_bucket_name=settings.S3_PRODUCT_3D_ASSETS_BUCKET, region_name=settings.AWS_REGION)
 sqs_service = SQSService(settings.SQS_QUEUE_URL)
 router = APIRouter()
 
@@ -78,7 +78,8 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
         # Download input file
         await s3_service.download_file_async(
             request.input_file_key,
-            input_file_path
+            input_file_path,
+            bucket_name=settings.S3_PRODUCT_3D_ASSETS_BUCKET
         )
         logger.info(f"Downloaded input file to {input_file_path}")
 
@@ -108,6 +109,24 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
             blender_command=blender_command,
             output_files=output_files
         )
+        
+        # Upload output files to S3
+        uploaded_files = []
+        for file in processed_files:
+            try:
+                await s3_service.upload_file_async(
+                    file.local_path,
+                    file.s3_key,
+                    bucket_name=settings.S3_PRODUCT_3D_ASSETS_BUCKET
+                )
+                uploaded_files.append(file)
+                logger.info(f"Uploaded {file.local_path} to {file.s3_key}")
+            except S3ServiceError as e:
+                logger.error(f"Failed to upload output file {file.local_path}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to upload output file: {str(e)}"
+                )
 
         return {
             "status": "completed",
@@ -118,7 +137,7 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
                     "type": file.file_type,
                     "s3_key": file.s3_key
                 }
-                for file in processed_files
+                for file in uploaded_files
             ]
         }
 
