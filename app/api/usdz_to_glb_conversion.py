@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 s3_service = S3Service(settings.S3_PRODUCT_3D_ASSETS_BUCKET, settings.AWS_REGION)
 sqs_service = SQSService(settings.SQS_QUEUE_URL)
-router = APIRouter(prefix="/api/v1/conversion", tags=["File Conversion"])
+router = APIRouter()
 
 class UsdzToGlbRequest(BaseModel):
     input_file_key: str = Field(..., description="S3 key for the input USDZ file")
@@ -53,7 +53,7 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
     Convert a USDZ file to GLB format.
     """
     try:
-        logger.info(
+        logger.debug(
             "Starting USDZ to GLB conversion",
             extra={
                 "input_file": request.input_file_key,
@@ -61,18 +61,16 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
             }
         )
 
-        # Validate file existence in S3
-        if not await s3_service.file_exists(request.input_file_key):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Input file {request.input_file_key} not found in S3"
-            )
-
         # Set up file paths using settings
         work_dir = os.path.join(settings.BLENDER_SCRIPTS_PATH, 'usdz_to_glb_conversion')
         input_file_path = os.path.join(work_dir, f'input_{os.path.basename(request.input_file_key)}')
         output_file_path = os.path.join(work_dir, f'output_{os.path.basename(request.output_file_key)}')
         blender_script_path = os.path.join(work_dir, 'blender_with_furniture.py')
+
+        logger.debug(f"Work directory: {work_dir}")
+        logger.debug(f"Input file path: {input_file_path}")
+        logger.debug(f"Output file path: {output_file_path}")
+        logger.debug(f"Blender script path: {blender_script_path}")
 
         # Ensure work directory exists
         os.makedirs(work_dir, exist_ok=True)
