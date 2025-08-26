@@ -17,7 +17,7 @@ from app.utils.file_utils import cleanup_processing_files
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-s3_service = S3Service(settings.S3_BUCKET_NAME, settings.AWS_REGION)
+s3_service = S3Service(settings.S3_PRODUCT_3D_ASSETS_BUCKET, settings.AWS_REGION)
 sqs_service = SQSService(settings.SQS_QUEUE_URL)
 router = APIRouter(prefix="/api/v1/conversion", tags=["File Conversion"])
 
@@ -92,8 +92,7 @@ async def convert_usdz_to_glb(request: UsdzToGlbRequest):
             "--python", blender_script_path,
             "--",  # Argument separator
             input_file_path,  # Input file
-            "-d", work_dir,  # Working directory
-            f"--output_file_path", json.dumps(output_file_path)
+            f" {output_file_path}"
         ]
         
         # Configure output files

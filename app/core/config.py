@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # AWS Settings
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = "nestingale-dev-digital-assets"
+    S3_PRODUCT_3D_ASSETS_BUCKET: str = "nestingale-dev-digital-assets-3d"
     SQS_QUEUE_URL: str = "https://sqs.us-east-1.amazonaws.com/311504593279/EmailMarketing"
     
     # Blender Settings
