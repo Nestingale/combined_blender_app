@@ -123,7 +123,7 @@ async def generate_photo_realistic_view(
             input_file_local_path,  # Local path to input file instead of S3 key
             "-d", output_dir,  # Working directory
             f"--generate-mask",
-             f"--combined_mask_only",
+            f"--combined-mask-only",
             f"--camera-json", json.dumps(request.camera_info),
             f"--lighting-json", json.dumps(request.lighting_info),
             f"--use-environment-map", json.dumps("studio.exr"),

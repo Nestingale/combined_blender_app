@@ -5,7 +5,7 @@
 import bpy
 import os
 import sys
-sys.path.append("/home/uyath/apps/combined_blender_app/venv/lib/python3.11/site-packages") # remove this hard code value in the future
+#sys.path.append("/home/ubuntu/blender_addons/python_libs") ## <--- Import folder of extra libraries
 import argparse
 import mathutils
 import math
