@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.services.s3_service import S3Service, S3ServiceError
 from app.services.sqs_service import SQSService
 from app.services.blender_service import process_blender_request_async, BlenderError, OutputFile
+from app.services.file_handling_service import FileHandlingService, ImageDownloadError
 from app.utils.file_utils import cleanup_processing_files
 
 router = APIRouter()
@@ -18,43 +19,25 @@ logger = logging.getLogger(__name__)
 s3_service = S3Service(default_bucket_name=settings.S3_BUCKET_NAME, region_name=settings.AWS_REGION)
 sqs_service = SQSService(settings.SQS_QUEUE_URL)
 
-class CameraInfo(BaseModel):
-    position: Dict[str, float]
-    rotation: Dict[str, float]
-    focal_length: Optional[float] = Field(default=50.0)
-
-class LightingInfo(BaseModel):
-    intensity: float = Field(ge=0.0)
-    color: Dict[str, float]
-    position: Dict[str, float]
-
 class PhotoRealisticViewRequest(BaseModel):
     template_id: str = Field(..., description="Unique identifier for the template")
-    glb_image_key: str = Field(..., description="S3 key for the GLB input file")
-    generated_2d_image_key: str = Field(..., description="S3 key for the output 2D image")
-    all_masks_key: str = Field(..., description="S3 key for the output masks")
-    camera_info: CameraInfo
-    lighting_info: LightingInfo
+    glb_image_key: str = Field(..., description="S3 key for input GLB file or public URL")
+    generated_2d_image_key: str = Field(..., description="S3 key for output 2D image")
+    all_masks_key: str = Field(..., description="S3 key for all product masks")
+    camera_info: Any = Field(..., description="Camera information for rendering")
+    lighting_info: Any = Field(..., description="Lighting information for rendering")
 
     class Config:
         schema_extra = {
             "example": {
                 "template_id": "template123",
-                "glb_image_key": "inputs/model.glb",
+                "glb_image_key": "inputs/scene.glb",
                 "generated_2d_image_key": "outputs/render.png",
-                "all_masks_key": "outputs/masks.png",
-                "camera_info": {
-                    "position": {"x": 0, "y": 2, "z": -5},
-                    "rotation": {"x": 0, "y": 0, "z": 0},
-                    "focal_length": 50.0
-                },
-                "lighting_info": {
-                    "intensity": 1.0,
-                    "color": {"r": 1.0, "g": 1.0, "b": 1.0},
-                    "position": {"x": 0, "y": 5, "z": 0}
-                }
+                "all_masks_key": "outputs/all_masks.png",
+                "camera_info": {},
+                "lighting_info": {},
             }
-        }
+        }        
 
 @router.post("/generatePhotoRealisticView", status_code=status.HTTP_200_OK)
 async def generate_photo_realistic_view(
@@ -68,49 +51,83 @@ async def generate_photo_realistic_view(
         logger.info(f"Processing request for template_id: {request.template_id}")
 
         # Define working directory and paths
-        working_dir = os.path.join(settings.BLENDER_SCRIPTS_PATH, 'photo_realistic_view', 'generated_files')
-        script_path = os.path.join(settings.BLENDER_SCRIPTS_PATH, 'photo_realistic_view', 'blender_script.py')
-        
+        working_dir = os.path.join(settings.BLENDER_SCRIPTS_PATH, 'photo_realistic_view')
+        script_path = os.path.join(working_dir, 'blender_script.py')
+        output_dir = os.path.join(working_dir, 'generated_files')
+
+        # Print all paths for debugging
+        logger.info(f"Working directory: {working_dir}")
+        logger.info(f"Script path: {script_path}")
+        logger.info(f"Output directory: {output_dir}")
+
         # Create working directory if it doesn't exist
         os.makedirs(working_dir, exist_ok=True)
+        os.makedirs(os.path.join(working_dir, 'input'), exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Download input GLB file from S3
+      
+        # Download input GLB file from S3 or URL
         input_file_local_path = os.path.join(working_dir, 'input', os.path.basename(request.glb_image_key))
-        os.makedirs(os.path.dirname(input_file_local_path), exist_ok=True)
-        
-        logger.info(f"Downloading input file from S3: {request.glb_image_key} to {input_file_local_path}")
-        await s3_service.download_file_async(request.glb_image_key, input_file_local_path, bucket_name=settings.S3_BUCKET_NAME)
-        logger.info(f"Successfully downloaded input file")
+        logger.info(f"Downloading input file: {request.glb_image_key} to {input_file_local_path}")
+
+        # Check if the input is a URL or an S3 key
+        if request.glb_image_key.startswith(('http://', 'https://')):
+            # It's a URL, use FileHandlingService
+            try:
+                await FileHandlingService.download_image_from_url_async(
+                    url=request.glb_image_key, 
+                    file_path=input_file_local_path
+                )
+                logger.info(f"Successfully downloaded input file from URL")
+            except ImageDownloadError as e:
+                logger.error(f"Failed to download file from URL: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to download input file: {str(e)}"
+                )
+        else:
+            # It's an S3 key, use S3Service
+            try:
+                await s3_service.download_file_async(request.glb_image_key, input_file_local_path, bucket_name=settings.S3_BUCKET_NAME)
+                logger.info(f"Successfully downloaded input file from S3")
+            except S3ServiceError as e:
+                logger.error(f"Failed to download file from S3: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to download input file: {str(e)}"
+                )
+
 
         # Configure output files
         output_files = [
             OutputFile(
-                local_path=os.path.join(working_dir, 'render.png'),
+                local_path=os.path.join(output_dir, 'room_render.png'),
                 s3_key=request.generated_2d_image_key,
                 file_type='png'
             ),
             OutputFile(
-                local_path=os.path.join(working_dir, 'masks.png'),
+                local_path=os.path.join(output_dir, 'mask_all_products.png'),
                 s3_key=request.all_masks_key,
                 file_type='png'
-            )
+            ),
         ]
 
         # Construct Blender command as a list of arguments
         blender_path = settings.BLENDER_PATH if hasattr(settings, 'BLENDER_PATH') else 'blender'
+
         blender_command = [
             "/usr/local/bin/blender",
             "--background",
             "--python", script_path,
             "--",  # Argument separator
             input_file_local_path,  # Local path to input file instead of S3 key
-            "-d", working_dir,  # Working directory
-            f"--camera_json", json.dumps(request.camera_info.dict()),
-            f"--lighting_json", json.dumps(request.lighting_info.dict()),
-            f"--generate_mask", json.dumps(True),
-            f"--combined_mask_only", json.dumps(True),
-            f"--use_environment_map", json.dumps("studio.exr"),
-            f"--use_existing_camera", json.dumps(True)
+            "-d", output_dir,  # Working directory
+            f"--generate-mask",
+             f"--combined_mask_only",
+            f"--camera-json", json.dumps(request.camera_info),
+            f"--lighting-json", json.dumps(request.lighting_info),
+            f"--use-environment-map", json.dumps("studio.exr"),
+            f"--use-existing-camera",
         ]
 
         # Process the request with the new approach
@@ -156,12 +173,12 @@ async def generate_photo_realistic_view(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-    finally:
-        # Clean up the downloaded input file and local output files
-        await cleanup_processing_files(
-            input_files=input_file_local_path, 
-            output_files=output_files,
-            working_dir=working_dir
-        )
+    # finally:
+    #     # Clean up the downloaded input file and local output files
+    #     await cleanup_processing_files(
+    #         input_files=input_file_local_path, 
+    #         output_files=output_files,
+    #         working_dir=working_dir
+    #     )
 
 # The cleanup_files function is now in utils.file_utils module
