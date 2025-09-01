@@ -115,6 +115,10 @@ async def generate_photo_realistic_view(
         # Construct Blender command as a list of arguments
         blender_path = settings.BLENDER_PATH if hasattr(settings, 'BLENDER_PATH') else 'blender'
 
+        # Prepare camera_info and lighting_info - if already a string, use it directly; otherwise, convert to JSON
+        camera_info = request.camera_info if isinstance(request.camera_info, str) else json.dumps(request.camera_info)
+        lighting_info = request.lighting_info if isinstance(request.lighting_info, str) else json.dumps(request.lighting_info)
+
         blender_command = [
             "/usr/local/bin/blender",
             "--background",
@@ -124,8 +128,8 @@ async def generate_photo_realistic_view(
             "-d", output_dir,  # Working directory
             f"--generate-mask",
             f"--combined-mask-only",
-            f"--camera-json", json.dumps(request.camera_info),
-            f"--lighting-json", json.dumps(request.lighting_info),
+            f"--camera-json", camera_info,
+            f"--lighting-json", lighting_info,
             f"--use-environment-map", json.dumps("studio.exr"),
             f"--use-existing-camera",
         ]
