@@ -139,6 +139,15 @@ async def replace_product(request: ProductReplacementRequest):
         if not isinstance(replace_product_param, str):
             replace_product_param = json.dumps(replace_product_param)
         
+        # Fix for camera_info and lighting_info - don't double-encode if already strings
+        camera_json_param = request.camera_info
+        if not isinstance(camera_json_param, str):
+            camera_json_param = json.dumps(camera_json_param)
+            
+        lighting_json_param = request.lighting_info
+        if not isinstance(lighting_json_param, str):
+            lighting_json_param = json.dumps(lighting_json_param)
+            
         blender_command = [
             "/usr/local/bin/blender",
             "--background",
@@ -147,8 +156,8 @@ async def replace_product(request: ProductReplacementRequest):
             input_file_local_path,  # Local path to input file instead of S3 key
             "-d", output_dir,  # Working directory
             "--generate-mask",
-            "--camera-json", json.dumps(request.camera_info),
-            "--lighting-json", json.dumps(request.lighting_info),
+            "--camera-json", camera_json_param,
+            "--lighting-json", lighting_json_param,
             "--use-environment-map", "studio.exr",
             "--use-existing-camera",
             "--replace-product", replace_product_param
