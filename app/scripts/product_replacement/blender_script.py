@@ -620,48 +620,48 @@ def setup_gpu_rendering():
 
 def parse_camera_json(json_str):
     try:
+        # Try to load the JSON string
         camera_data = json.loads(json_str)
+        
+        # Create a new dictionary starting from defaults
+        parsed_camera = CAMERA_PARAMS.copy()
+        
+        # Override with provided values
+        for key, value in camera_data.items():
+            parsed_camera[key] = value
+        
+        # Validate specific fields
         required_fields = ["position", "target", "fov"]
         for field in required_fields:
-            if field not in camera_data:
+            if field not in parsed_camera:
                 print(f"Warning: Missing required camera field '{field}'. Using default value.")
-                camera_data[field] = CAMERA_PARAMS[field]
-        
-        camera_data.setdefault("up", CAMERA_PARAMS["up"])
-        camera_data.setdefault("aspect_ratio", CAMERA_PARAMS["aspect_ratio"])
-        camera_data.setdefault("near", CAMERA_PARAMS["near"])
-        camera_data.setdefault("far", CAMERA_PARAMS["far"])
-        camera_data.setdefault("productNameList", CAMERA_PARAMS["productNameList"])
-        camera_data.setdefault("sensor_fit", CAMERA_PARAMS["sensor_fit"])
-        camera_data.setdefault("sensor_width", CAMERA_PARAMS["sensor_width"])
-        camera_data.setdefault("lens", CAMERA_PARAMS["lens"])
-        camera_data.setdefault("clip_start", CAMERA_PARAMS["clip_start"])
-        camera_data.setdefault("clip_end", CAMERA_PARAMS["clip_end"])
-        camera_data.setdefault("shift_x", CAMERA_PARAMS["shift_x"])
-        camera_data.setdefault("shift_y", CAMERA_PARAMS["shift_y"])
-        camera_data.setdefault("type", CAMERA_PARAMS["type"])
-        camera_data.setdefault("resolution_x", CAMERA_PARAMS["resolution_x"])
-        camera_data.setdefault("resolution_y", CAMERA_PARAMS["resolution_y"])
-        camera_data.setdefault("resolution_percentage", CAMERA_PARAMS["resolution_percentage"])
-        camera_data.setdefault("pixel_aspect_x", CAMERA_PARAMS["pixel_aspect_x"])
-        camera_data.setdefault("pixel_aspect_y", CAMERA_PARAMS["pixel_aspect_y"])
+                parsed_camera[field] = CAMERA_PARAMS[field]
         
         for vector_field in ["position", "target", "up"]:
-            if not all(key in camera_data[vector_field] for key in ["x", "y", "z"]):
-                print(f"Warning: Invalid {vector_field} format. Using default values.")
-                camera_data[vector_field] = CAMERA_PARAMS[vector_field]
+            if vector_field in parsed_camera:
+                # Special handling for target which might only have x and y
+                if vector_field == "target" and "x" in parsed_camera[vector_field] and "y" in parsed_camera[vector_field]:
+                    # If z is missing in target, set it to 0
+                    if "z" not in parsed_camera[vector_field]:
+                        parsed_camera[vector_field]["z"] = 0
+                        print(f"Added missing z=0 to target")
+                elif not all(key in parsed_camera[vector_field] for key in ["x", "y", "z"]):
+                    print(f"Warning: Invalid {vector_field} format. Using default values.")
+                    parsed_camera[vector_field] = CAMERA_PARAMS[vector_field]
         
-        if not isinstance(camera_data["productNameList"], list):
-            print("Warning: productNameList must be a list of strings. Using default empty list.")
-            camera_data["productNameList"] = CAMERA_PARAMS["productNameList"]
-        else:
-            for sku_id in camera_data["productNameList"]:
-                if not isinstance(sku_id, str):
-                    print(f"Warning: Invalid SKU ID {sku_id} in productNameList, must be a string. Using default empty list.")
-                    camera_data["productNameList"] = CAMERA_PARAMS["productNameList"]
-                    break
+        # Special handling for productNameList
+        if "productNameList" in parsed_camera:
+            if not isinstance(parsed_camera["productNameList"], list):
+                print("Warning: productNameList must be a list of strings. Using default empty list.")
+                parsed_camera["productNameList"] = CAMERA_PARAMS["productNameList"]
+            else:
+                for sku_id in parsed_camera["productNameList"]:
+                    if not isinstance(sku_id, str):
+                        print(f"Warning: Invalid SKU ID {sku_id} in productNameList, must be a string. Using default empty list.")
+                        parsed_camera["productNameList"] = CAMERA_PARAMS["productNameList"]
+                        break
         
-        return camera_data
+        return parsed_camera
     except json.JSONDecodeError as e:
         print(f"Error parsing camera JSON: {e}")
         return CAMERA_PARAMS
@@ -671,56 +671,29 @@ def parse_camera_json(json_str):
 
 def parse_lighting_json(json_str):
     try:
+        # Try to load the JSON string
         lighting_data = json.loads(json_str)
         
-        # Handle nested structure with pointLight and other properties
+        # Create a new dictionary with defaults
+        parsed_lighting = LIGHTING_PARAMS.copy()
+        
+        # Handle nested structure with pointLight
         if "pointLight" in lighting_data:
             point_light = lighting_data["pointLight"]
+            
             # Extract point light properties
-            required_fields = ["position", "color", "energy"]
-            for field in required_fields:
-                if field not in point_light:
-                    print(f"Warning: Missing required pointLight field '{field}'. Using default value.")
-                    point_light[field] = LIGHTING_PARAMS[field]
-            
-            # Set distance and decay with defaults if not present
-            point_light.setdefault("distance", LIGHTING_PARAMS["distance"])
-            point_light.setdefault("decay", LIGHTING_PARAMS["decay"])
-            
-            # Validate position format
-            if not all(key in point_light["position"] for key in ["x", "y", "z"]):
-                print(f"Warning: Invalid position format. Using default values.")
-                point_light["position"] = LIGHTING_PARAMS["position"]
-            
-            # Validate color format
-            if not isinstance(point_light["color"], str) or not all(c in "0123456789abcdefABCDEF" for c in point_light["color"]):
-                print(f"Warning: Invalid color format. Using default values.")
-                point_light["color"] = LIGHTING_PARAMS["color"]
-            
-            # Use the pointLight data as the main lighting data
-            parsed_lighting = point_light.copy()
-        else:
-            # Handle flat structure (backwards compatibility)
-            required_fields = ["position", "color", "energy"]
-            for field in required_fields:
-                if field not in lighting_data:
-                    print(f"Warning: Missing required lighting field '{field}'. Using default value.")
-                    lighting_data[field] = LIGHTING_PARAMS[field]
-            
-            lighting_data.setdefault("distance", LIGHTING_PARAMS["distance"])
-            lighting_data.setdefault("decay", LIGHTING_PARAMS["decay"])
-            
-            if not all(key in lighting_data["position"] for key in ["x", "y", "z"]):
-                print(f"Warning: Invalid position format. Using default values.")
-                lighting_data["position"] = LIGHTING_PARAMS["position"]
-            
-            if not isinstance(lighting_data["color"], str) or not all(c in "0123456789abcdefABCDEF" for c in lighting_data["color"]):
-                print(f"Warning: Invalid color format. Using default values.")
-                lighting_data["color"] = LIGHTING_PARAMS["color"]
-            
-            parsed_lighting = lighting_data.copy()
+            if "position" in point_light:
+                parsed_lighting["position"] = point_light["position"]
+            if "color" in point_light:
+                parsed_lighting["color"] = point_light["color"]
+            if "energy" in point_light:
+                parsed_lighting["energy"] = point_light["energy"]
+            if "distance" in point_light:
+                parsed_lighting["distance"] = point_light["distance"]
+            if "decay" in point_light:
+                parsed_lighting["decay"] = point_light["decay"]
         
-        # Handle top-level exposure and environment_intensity settings
+        # Handle top-level properties
         if "exposure" in lighting_data:
             parsed_lighting["exposure"] = lighting_data["exposure"]
             print(f"Found exposure setting in lighting JSON: {lighting_data['exposure']}")
@@ -729,10 +702,21 @@ def parse_lighting_json(json_str):
             parsed_lighting["environment_intensity"] = lighting_data["environment_intensity"]
             print(f"Found environment_intensity setting in lighting JSON: {lighting_data['environment_intensity']}")
         
-        # Handle hdriPreset (for reference, though not used in current implementation)
         if "hdriPreset" in lighting_data:
             parsed_lighting["hdriPreset"] = lighting_data["hdriPreset"]
             print(f"Found hdriPreset in lighting JSON: {lighting_data['hdriPreset']}")
+        
+        # Validate position format
+        if "position" in parsed_lighting:
+            if not all(key in parsed_lighting["position"] for key in ["x", "y", "z"]):
+                print(f"Warning: Invalid position format. Using default values.")
+                parsed_lighting["position"] = LIGHTING_PARAMS["position"]
+        
+        # Validate color format
+        if "color" in parsed_lighting:
+            if not isinstance(parsed_lighting["color"], str) or not all(c in "0123456789abcdefABCDEF" for c in parsed_lighting["color"]):
+                print(f"Warning: Invalid color format. Using default values.")
+                parsed_lighting["color"] = LIGHTING_PARAMS["color"]
         
         return parsed_lighting
     except json.JSONDecodeError as e:
@@ -1401,13 +1385,31 @@ args = parser.parse_args(args)
 
 # Override default camera settings if provided via command line
 if args.camera_json:
-    CAMERA_PARAMS = parse_camera_json(args.camera_json)
-    print("Using custom camera parameters from command line")
+    print(f"Raw camera_json: {args.camera_json}")
+    try:
+        # Try to parse the JSON string
+        test_json = json.loads(args.camera_json)
+        print(f"Successfully parsed camera JSON: {type(test_json)}")
+        # Now try to use the parsing function
+        CAMERA_PARAMS = parse_camera_json(args.camera_json)
+        print("Camera parameters successfully loaded from command line")
+    except Exception as e:
+        print(f"Unexpected error parsing camera data: {type(e).__name__}: {e}")
+        print("Using custom camera parameters from command line")
 
 # Override default lighting settings if provided via command line
 if args.lighting_json:
-    LIGHTING_PARAMS = parse_lighting_json(args.lighting_json)
-    print("Using custom lighting parameters from command line")
+    print(f"Raw lighting_json: {args.lighting_json}")
+    try:
+        # Try to parse the JSON string
+        test_json = json.loads(args.lighting_json)
+        print(f"Successfully parsed lighting JSON: {type(test_json)}")
+        # Now try to use the parsing function
+        LIGHTING_PARAMS = parse_lighting_json(args.lighting_json)
+        print("Lighting parameters successfully loaded from command line")
+    except Exception as e:
+        print(f"Unexpected error parsing lighting data: {type(e).__name__}: {e}")
+        print("Using custom lighting parameters from command line")
 
 if args.mainfile.endswith('.glb') or args.mainfile.endswith('.gltf'):
     bpy.ops.object.select_all(action='SELECT')
