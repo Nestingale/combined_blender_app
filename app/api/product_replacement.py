@@ -132,6 +132,13 @@ async def replace_product(request: ProductReplacementRequest):
         # Process the request
         # Construct Blender command as a list of arguments
         blender_path = settings.BLENDER_PATH if hasattr(settings, 'BLENDER_PATH') else 'blender'
+        
+        # Handle replace_product_data specially since it's causing issues
+        # If it's already a string, use it directly; otherwise, convert to JSON
+        replace_product_param = request.replace_product_data
+        if not isinstance(replace_product_param, str):
+            replace_product_param = json.dumps(replace_product_param)
+        
         blender_command = [
             "/usr/local/bin/blender",
             "--background",
@@ -139,12 +146,12 @@ async def replace_product(request: ProductReplacementRequest):
             "--",  # Argument separator
             input_file_local_path,  # Local path to input file instead of S3 key
             "-d", output_dir,  # Working directory
-            f"--generate-mask",
-            f"--camera-json", json.dumps(request.camera_info),
-            f"--lighting-json", json.dumps(request.lighting_info),
-            f"--use-environment-map", json.dumps("studio.exr"),
-            f"--use-existing-camera",
-            f"--replace-product", json.dumps(request.replace_product_data)
+            "--generate-mask",
+            "--camera-json", json.dumps(request.camera_info),
+            "--lighting-json", json.dumps(request.lighting_info),
+            "--use-environment-map", "studio.exr",
+            "--use-existing-camera",
+            "--replace-product", replace_product_param
         ]
 
         # Process the request with the new approach
