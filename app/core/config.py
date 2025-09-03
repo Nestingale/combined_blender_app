@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
     
+    # Timeout Settings
+    REQUEST_TIMEOUT: int = 3600  # 1 hour timeout for requests
+    KEEP_ALIVE_TIMEOUT: int = 300  # 5 minutes for keep-alive
+    GRACEFUL_SHUTDOWN_TIMEOUT: int = 600  # 10 minutes for graceful shutdown
+    BLENDER_PROCESS_TIMEOUT: int = 3500  # 58.3 minutes for Blender processes
+
     # Additional settings
     S3_REGION: str = ""
     LOG_LEVEL: str = "INFO"
