@@ -5,7 +5,7 @@
 import bpy
 import os
 import sys
-sys.path.append("/home/ubuntu/blender_addons/python_libs") ## <--- Import folder of extra libraries
+# sys.path.append("/home/ubuntu/blender_addons/python_libs") ## <--- Import folder of extra libraries
 import argparse
 import mathutils
 import math
