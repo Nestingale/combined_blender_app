@@ -5,7 +5,7 @@
 import bpy
 import os
 import sys
-#sys.path.append("/home/ubuntu/blender_addons/python_libs") ## <--- Import folder of extra libraries
+sys.path.append("/home/ubuntu/blender_addons/python_libs") ## <--- Import folder of extra libraries
 import argparse
 import mathutils
 import math
@@ -154,6 +154,11 @@ def replace(from_name, to_glb, new_name=None):
     # Get the mesh's WORLD position (not local position relative to parent)
     original_mesh_world_pos = original_mesh.matrix_world.translation.copy()
     
+    original_bbox_corners = [original_mesh.matrix_world @ mathutils.Vector(corner) for corner in original_mesh.bound_box]
+    original_floor_z = min(corner.z for corner in original_bbox_corners)
+    original_bbox_center_x = sum(corner.x for corner in original_bbox_corners) / len(original_bbox_corners)
+    original_bbox_center_y = sum(corner.y for corner in original_bbox_corners) / len(original_bbox_corners)
+    
     print(f"Original EMPTY location: {original_location}")
     print(f"Original mesh world location: {original_mesh_world_pos}")
 
@@ -168,12 +173,12 @@ def replace(from_name, to_glb, new_name=None):
                 return False
             to_glb = temp_file
             # Proceed with replacement
-            return perform_replace(from_name, to_glb, new_name, original_object, original_mesh, original_location, original_rotation, original_mesh_world_pos)
+            return perform_replace(from_name, to_glb, new_name, original_object, original_mesh, original_location, original_rotation, original_mesh_world_pos, original_floor_z)
     else:
         # Local file, proceed directly
-        return perform_replace(from_name, to_glb, new_name, original_object, original_mesh, original_location, original_rotation, original_mesh_world_pos)
+        return perform_replace(from_name, to_glb, new_name, original_object, original_mesh, original_location, original_rotation, original_mesh_world_pos, original_floor_z)
 
-def perform_replace(from_name, to_glb, new_name, original_object, original_mesh, original_location, original_rotation, original_mesh_world_pos):
+def perform_replace(from_name, to_glb, new_name, original_object, original_mesh, original_location, original_rotation, original_mesh_world_pos, original_floor_z):
     """Perform the actual replacement of the object with the GLB file."""
     # Remove the original object and its children from the scene
     children_to_delete = [child for child in original_object.children]
@@ -231,17 +236,72 @@ def perform_replace(from_name, to_glb, new_name, original_object, original_mesh,
     # Store the original imported object name for tracking
     original_imported_name = main_imported_obj.name
     
+    # The imported GLB is already upright (Blender converts Y-up to Z-up automatically)
+    # We only need to apply the Z-axis rotation (horizontal facing direction)
+    # The original mesh's X/Y rotations were to make IT stand upright, which we don't need
+    original_euler = original_rotation.to_euler('XYZ')
+    
+    # Only apply Z rotation (yaw/horizontal direction) to the parent EMPTY
+    # Invert the Z rotation and add 180° to flip the object to face the correct direction
+    flipped_z_rotation = original_euler.z
+    empty_obj.rotation_mode = 'XYZ'
+    empty_obj.rotation_euler = mathutils.Euler((0, 0, flipped_z_rotation), 'XYZ')
+    
+    print(f"Applied flipped Z rotation to parent EMPTY: {math.degrees(flipped_z_rotation):.1f}° (original was {math.degrees(original_euler.z):.1f}°)")
+    
     # Handle different import structures
     if main_imported_obj.type == 'EMPTY':
         # GLB has hierarchy - parent the EMPTY to our new parent
         main_imported_obj.parent = empty_obj
-        main_imported_obj.location = original_mesh_world_pos - original_location
+        # main_imported_obj.location = original_mesh_world_pos - original_location
+        main_imported_obj.location = (0, 0, 0)
         
         # Find and set rotation on the mesh children
         mesh_children = get_all_mesh_descendants(main_imported_obj)
-        for mesh_child in mesh_children:
-            mesh_child.rotation_quaternion = original_rotation
+        # for mesh_child in mesh_children:
+        #     mesh_child.rotation_quaternion = original_rotation
         
+        # Update the scene to apply transformations
+        bpy.context.view_layer.update()
+        
+        # Calculate bounding box center and base in world space
+        if mesh_children:
+            all_mesh_objects = mesh_children
+            min_z = float('inf')
+            all_corners = []
+            for mesh_obj in all_mesh_objects:
+                # Get world-space bounding box corners
+                bbox_corners = [mesh_obj.matrix_world @ mathutils.Vector(corner) for corner in mesh_obj.bound_box]
+                all_corners.extend(bbox_corners)
+                for corner in bbox_corners:
+                    if corner.z < min_z:
+                        min_z = corner.z
+            
+            # Calculate the center of the bounding box in world space
+            if all_corners:
+                center_x = sum(c.x for c in all_corners) / len(all_corners)
+                center_y = sum(c.y for c in all_corners) / len(all_corners)
+                current_base = mathutils.Vector((center_x, center_y, min_z))
+                
+                # Target position: use original mesh position for XY, but use actual floor level for Z
+                target_pos = mathutils.Vector((
+                    original_mesh_world_pos.x,
+                    original_mesh_world_pos.y,
+                    original_floor_z  # Use the actual floor level from original bounding box
+                ))
+                
+                # Calculate offset needed in world space
+                world_offset = target_pos - current_base
+                
+                parent_matrix_inv = empty_obj.matrix_world.inverted()
+                local_offset = parent_matrix_inv.to_3x3() @ world_offset
+                
+                main_imported_obj.location.x += local_offset.x
+                main_imported_obj.location.y += local_offset.y
+                main_imported_obj.location.z += local_offset.z
+                
+                print(f"Local offset applied: {local_offset}")
+                
         # Rename the imported EMPTY to distinguish it
         main_imported_obj.name = f"{empty_name}_imported"
         
@@ -249,7 +309,32 @@ def perform_replace(from_name, to_glb, new_name, original_object, original_mesh,
         # GLB is just a mesh - parent it directly and apply rotation
         main_imported_obj.rotation_quaternion = original_rotation
         main_imported_obj.parent = empty_obj
-        main_imported_obj.location = original_mesh_world_pos - original_location
+        # main_imported_obj.location = original_mesh_world_pos - original_location
+        main_imported_obj.location = (0, 0, 0)
+        # Update the scene to apply transformations
+        bpy.context.view_layer.update()
+        
+        bbox_corners = [main_imported_obj.matrix_world @ mathutils.Vector(corner) for corner in main_imported_obj.bound_box]
+        min_z = min(corner.z for corner in bbox_corners)
+        
+        center_x = sum(c.x for c in bbox_corners) / len(bbox_corners)
+        center_y = sum(c.y for c in bbox_corners) / len(bbox_corners)
+        current_base = mathutils.Vector((center_x, center_y, min_z))
+        
+        target_pos = mathutils.Vector((
+            original_mesh_world_pos.x,
+            original_mesh_world_pos.y,
+            original_floor_z  # Use the actual floor level from original bounding box
+        ))
+        
+        world_offset = target_pos - current_base
+        parent_matrix_inv = empty_obj.matrix_world.inverted()
+        local_offset = parent_matrix_inv.to_3x3() @ world_offset
+        
+        main_imported_obj.location.x += local_offset.x
+        main_imported_obj.location.y += local_offset.y
+        main_imported_obj.location.z += local_offset.z
+                
         main_imported_obj.name = f"{empty_name}_mesh"
 
     print(f"Replacement complete:")
@@ -1310,6 +1395,13 @@ def render_individual_products_with_current_settings(target_products=None, rende
         if extras_parent:
             extras_objects = get_all_mesh_descendants(extras_parent)
             print(f"Found {len(extras_objects)} objects under Extras parent")
+            
+        floor_objects = []
+        for obj in bpy.data.objects:
+            if obj.name in ['Floor', 'Floor0'] or 'floor' in obj.name.lower():
+                floor_objects.append(obj)
+        print(f"Identified {len(floor_objects)} floor objects to keep visible for shadows.")
+
         
         # Render each product individually
         for sku_id, parent_obj, meshes in products_to_render:
@@ -1326,6 +1418,9 @@ def render_individual_products_with_current_settings(target_products=None, rende
             parent_obj.hide_render = False
             for mesh in meshes:
                 mesh.hide_render = False
+            
+            for floor_obj in floor_objects:
+                floor_obj.hide_render = False
             
             # Apply naming override for output file
             safe_filename = sku_id
