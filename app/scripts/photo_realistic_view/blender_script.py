@@ -737,14 +737,22 @@ def parse_camera_json(json_str):
                 camera_data[vector_field] = CAMERA_PARAMS[vector_field]
         
         if not isinstance(camera_data["productNameList"], list):
-            print("Warning: productNameList must be a list of strings. Using default empty list.")
+            print("Warning: productNameList must be a list. Using default empty list.")
             camera_data["productNameList"] = CAMERA_PARAMS["productNameList"]
         else:
-            for sku_id in camera_data["productNameList"]:
-                if not isinstance(sku_id, str):
-                    print(f"Warning: Invalid SKU ID {sku_id} in productNameList, must be a string. Using default empty list.")
-                    camera_data["productNameList"] = CAMERA_PARAMS["productNameList"]
-                    break
+            processed_list = []
+
+            for item in camera_data["productNameList"]:
+                if isinstance(item, str):
+                    processed_list.append(item)
+
+                elif isinstance(item, dict) and "productSkuId" in item:
+                    processed_list.append(item["productSkuId"])
+
+                else:
+                    print(f"Warning: Invalid item in productNameList: {item}")
+
+            camera_data["productNameList"] = processed_list
         
         return camera_data
     except json.JSONDecodeError as e:
