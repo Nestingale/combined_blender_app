@@ -451,86 +451,148 @@ def setup_custom_camera():
 
 def setup_custom_lighting():
     """Set up custom lighting or environment map based on command-line arguments"""
+
+    # Remove existing point lights
     for obj in bpy.data.objects:
         if obj.type == 'LIGHT' and obj.data.type == 'POINT':
             bpy.data.objects.remove(obj, do_unlink=True)
-    
+
+    # Ensure a world exists
     if bpy.context.scene.world is None:
         bpy.context.scene.world = bpy.data.worlds.new("World")
-    
+
     bpy.context.scene.world.use_nodes = True
     world_nodes = bpy.context.scene.world.node_tree.nodes
     world_links = bpy.context.scene.world.node_tree.links
-    
+
     world_nodes.clear()
-    
+
     output_node = world_nodes.new(type='ShaderNodeOutputWorld')
     background_node = world_nodes.new(type='ShaderNodeBackground')
-    
+
     # Determine exposure/intensity value to use
-    # For environment maps: lighting JSON environment_intensity > default ENVIRONMENT_PARAMS exposure (150)
-    # For point lights: lighting JSON exposure > default lighting exposure
-    exposure_value = ENVIRONMENT_PARAMS["exposure"]  # Default fallback (150)
-    
+    # For environment maps:
+    # lighting JSON environment_intensity > default ENVIRONMENT_PARAMS exposure
+    #
+    # For point lights:
+    # lighting JSON exposure > default lighting exposure
+    exposure_value = ENVIRONMENT_PARAMS["exposure"]
+
     if args.use_environment_map:
-        # For environment maps, only use environment_intensity if provided, otherwise use default 150
         if "environment_intensity" in LIGHTING_PARAMS:
             exposure_value = LIGHTING_PARAMS["environment_intensity"]
-            print(f"Using environment_intensity from lighting JSON: {exposure_value}")
+            print(
+                f"Using environment_intensity from lighting JSON: "
+                f"{exposure_value}"
+            )
         else:
             print(f"Using default environment exposure: {exposure_value}")
+
     else:
-        # For point lights, use lighting JSON exposure if available
         if "exposure" in LIGHTING_PARAMS:
             exposure_value = LIGHTING_PARAMS["exposure"]
             print(f"Using exposure from lighting JSON: {exposure_value}")
         else:
             print(f"Using default exposure: {exposure_value}")
-    
+
     if args.use_environment_map:
         env_path = args.use_environment_map
+
+        # Remove literal quote characters in case the argument was passed
+        # as '"studio.exr"' instead of 'studio.exr'.
+        env_path = env_path.strip('"').strip("'")
+
+        # Resolve relative environment-map paths relative to this
+        # blender_script.py file instead of the process working directory.
+        if not os.path.isabs(env_path):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            env_path = os.path.join(script_dir, env_path)
+
+        env_path = os.path.abspath(env_path)
+
+        print(f"Resolved environment texture path: {env_path}")
+
         if os.path.exists(env_path):
             print(f"Loading environment texture from: {env_path}")
-            env_tex_node = world_nodes.new(type='ShaderNodeTexEnvironment')
+
+            env_tex_node = world_nodes.new(
+                type='ShaderNodeTexEnvironment'
+            )
+
             env_tex_node.image = bpy.data.images.load(env_path)
-            world_links.new(env_tex_node.outputs['Color'], background_node.inputs['Color'])
+
+            world_links.new(
+                env_tex_node.outputs['Color'],
+                background_node.inputs['Color']
+            )
+
             background_node.inputs['Strength'].default_value = exposure_value
-            print(f"Environment map intensity set to: {exposure_value}")
+
+            print(
+                f"Environment map intensity set to: "
+                f"{exposure_value}"
+            )
+
         else:
-            print(f"Error: Environment texture path does not exist: {env_path}")
-            background_node.inputs['Color'].default_value = ENVIRONMENT_PARAMS["background_color"]
+            print(
+                f"Error: Environment texture path does not exist: "
+                f"{env_path}"
+            )
+
+            background_node.inputs['Color'].default_value = (
+                ENVIRONMENT_PARAMS["background_color"]
+            )
+
             background_node.inputs['Strength'].default_value = exposure_value
+
     else:
-        light_data = bpy.data.lights.new(name="PointLight", type='POINT')
-        light_obj = bpy.data.objects.new("PointLight", light_data)
+        light_data = bpy.data.lights.new(
+            name="PointLight",
+            type='POINT'
+        )
+
+        light_obj = bpy.data.objects.new(
+            "PointLight",
+            light_data
+        )
+
         bpy.context.scene.collection.objects.link(light_obj)
-        
+
         threejs_pos = mathutils.Vector((
             LIGHTING_PARAMS["position"]["x"],
             LIGHTING_PARAMS["position"]["y"],
             LIGHTING_PARAMS["position"]["z"]
         ))
-        
+
+        # Convert Three.js coordinates to Blender coordinates
         light_obj.location.x = threejs_pos.x
         light_obj.location.y = -threejs_pos.z
         light_obj.location.z = threejs_pos.y
-        
+
         hex_color = LIGHTING_PARAMS["color"]
+
         r = int(hex_color[0:2], 16) / 255
         g = int(hex_color[2:4], 16) / 255
         b = int(hex_color[4:6], 16) / 255
+
         light_data.color = (r, g, b)
-        
+
         light_data.energy = LIGHTING_PARAMS["energy"]
-        
+
         light_data.use_custom_distance = True
         light_data.cutoff_distance = LIGHTING_PARAMS["distance"]
-        
-        background_node.inputs['Color'].default_value = ENVIRONMENT_PARAMS["background_color"]
+
+        background_node.inputs['Color'].default_value = (
+            ENVIRONMENT_PARAMS["background_color"]
+        )
+
         background_node.inputs['Strength'].default_value = exposure_value
-    
-    world_links.new(background_node.outputs['Background'], output_node.inputs['Surface'])
-    
+
+    world_links.new(
+        background_node.outputs['Background'],
+        output_node.inputs['Surface']
+    )
+
     return light_obj if not args.use_environment_map else None
 
 def find_environment_texture():
@@ -631,12 +693,13 @@ def setup_gpu_rendering():
 def parse_camera_json(json_str):
     try:
         camera_data = json.loads(json_str)
+
         required_fields = ["position", "target", "fov"]
         for field in required_fields:
             if field not in camera_data:
                 print(f"Warning: Missing required camera field '{field}'. Using default value.")
                 camera_data[field] = CAMERA_PARAMS[field]
-        
+
         camera_data.setdefault("up", CAMERA_PARAMS["up"])
         camera_data.setdefault("aspect_ratio", CAMERA_PARAMS["aspect_ratio"])
         camera_data.setdefault("near", CAMERA_PARAMS["near"])
@@ -655,26 +718,81 @@ def parse_camera_json(json_str):
         camera_data.setdefault("resolution_percentage", CAMERA_PARAMS["resolution_percentage"])
         camera_data.setdefault("pixel_aspect_x", CAMERA_PARAMS["pixel_aspect_x"])
         camera_data.setdefault("pixel_aspect_y", CAMERA_PARAMS["pixel_aspect_y"])
-        
+
         for vector_field in ["position", "target", "up"]:
             if not all(key in camera_data[vector_field] for key in ["x", "y", "z"]):
                 print(f"Warning: Invalid {vector_field} format. Using default values.")
                 camera_data[vector_field] = CAMERA_PARAMS[vector_field]
-        
-        if not isinstance(camera_data["productNameList"], list):
-            print("Warning: productNameList must be a list of strings. Using default empty list.")
-            camera_data["productNameList"] = CAMERA_PARAMS["productNameList"]
+
+        # Normalize productNameList.
+        #
+        # Supported input formats:
+        #
+        # ["SKU-1", "SKU-2"]
+        #
+        # or:
+        #
+        # [
+        #     {
+        #         "productSubTypePath": "Chairs",
+        #         "productSkuId": "SKU-1"
+        #     }
+        # ]
+        #
+        # Internally, the rest of this Blender script expects a flat list
+        # of SKU strings.
+        product_name_list = camera_data.get("productNameList", [])
+
+        if not isinstance(product_name_list, list):
+            print(
+                "Warning: productNameList must be a list. "
+                "Using default empty list."
+            )
+            camera_data["productNameList"] = []
         else:
-            for sku_id in camera_data["productNameList"]:
-                if not isinstance(sku_id, str):
-                    print(f"Warning: Invalid SKU ID {sku_id} in productNameList, must be a string. Using default empty list.")
-                    camera_data["productNameList"] = CAMERA_PARAMS["productNameList"]
-                    break
-        
+            normalized_product_ids = []
+
+            for product in product_name_list:
+                # Backwards-compatible format:
+                # ["SKU-1", "SKU-2"]
+                if isinstance(product, str):
+                    if product:
+                        normalized_product_ids.append(product)
+                    continue
+
+                # Current application format:
+                # [{"productSkuId": "SKU-1", ...}]
+                if isinstance(product, dict):
+                    sku_id = product.get("productSkuId")
+
+                    if isinstance(sku_id, str) and sku_id:
+                        normalized_product_ids.append(sku_id)
+                    else:
+                        print(
+                            f"Warning: Invalid or missing productSkuId "
+                            f"in productNameList entry: {product}"
+                        )
+
+                    continue
+
+                print(
+                    f"Warning: Unsupported productNameList entry "
+                    f"type {type(product).__name__}: {product}"
+                )
+
+            camera_data["productNameList"] = normalized_product_ids
+
+            print(
+                f"Normalized productNameList: "
+                f"{camera_data['productNameList']}"
+            )
+
         return camera_data
+
     except json.JSONDecodeError as e:
         print(f"Error parsing camera JSON: {e}")
         return CAMERA_PARAMS
+
     except Exception as e:
         print(f"Unexpected error parsing camera data: {e}")
         return CAMERA_PARAMS
