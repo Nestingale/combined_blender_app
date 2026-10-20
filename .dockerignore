@@ -59,3 +59,19 @@ tests/
 # CI/CD (only needed in CI, not in image)
 .github/
 ci/
+
+# NEW
+.git
+.github
+.env
+.env.*
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+venv
+logs
+working_data
+app/scripts/**/generated_files/*
+app/scripts/**/input/*
