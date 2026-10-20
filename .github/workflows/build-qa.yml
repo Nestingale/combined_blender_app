@@ -41,12 +41,14 @@ jobs:
                   HARBOR_USERNAME: ${{ secrets.HARBOR_CI_USERNAME }}
                   HARBOR_TOKEN: ${{ secrets.HARBOR_CI_TOKEN }}
               run: |
-                mkdir -p "$HOME/.docker"
-                AUTH="$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_TOKEN" | base64 | tr -d '\n')"
-                printf '{"auths":{"registry.infra.nestingale.com":{"auth":"%s"}}}\n' \
-                    "$AUTH" > "$HOME/.docker/config.json"
-                python3 -m json.tool "$HOME/.docker/config.json" >/dev/null
-                echo "Harbor auth config valid"
+                  : "${HARBOR_USERNAME:?HARBOR_CI_USERNAME secret is not set}"
+                  : "${HARBOR_TOKEN:?HARBOR_CI_TOKEN secret is not set}"
+                  mkdir -p "$HOME/.docker"
+                  AUTH="$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_TOKEN" | base64 | tr -d '\n')"
+                  printf '{"auths":{"registry.infra.nestingale.com":{"auth":"%s"}}}\n' \
+                     "$AUTH" > "$HOME/.docker/config.json"
+                  python3 -m json.tool "$HOME/.docker/config.json" >/dev/null
+                  echo "Harbor credentials configured"
 
             - name: Build and push image
               shell: bash
@@ -55,11 +57,17 @@ jobs:
                 DOCKER_CONFIG: /home/runner/.docker
                 IMAGE: registry.infra.nestingale.com/nestingale/combined-blender-app
               run: |
-                buildctl build \
+                  buildctl build \
                   --frontend dockerfile.v0 \
                   --local context=. \
                   --local dockerfile=. \
-                  --output "type=image,name=${IMAGE}:${GITHUB_SHA},${IMAGE}:qa,push=true"
+                  --output "type=image,name=${IMAGE}:${GITHUB_SHA},push=true"
+
+                  buildctl build \
+                  --frontend dockerfile.v0 \
+                  --local context=. \
+                  --local dockerfile=. \
+                  --output "type=image,name=${IMAGE}:qa,push=true"
 
             - name: Show image tags
               shell: bash
