@@ -46,7 +46,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY tests ./tests
 
 RUN mkdir -p \
     /app/app/scripts/photo_realistic_view/generated_files \
