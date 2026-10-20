@@ -1,8 +1,7 @@
 import os
-import json
 import asyncio
 import subprocess
-from typing import Dict, Any, List
+from typing import List
 import logging
 from dataclasses import dataclass
 
@@ -11,15 +10,18 @@ from app.core.config import get_settings
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class OutputFile:
     local_path: str
     s3_key: str
     file_type: str
 
+
 class BlenderError(Exception):
-    """Custom exception for Blender-related errors"""
+    """Custom exception for Blender-related errors."""
     pass
+
 
 async def process_blender_request_async(
     working_dir: str,
@@ -27,80 +29,171 @@ async def process_blender_request_async(
     output_files: List[OutputFile]
 ) -> List[OutputFile]:
     """
-    Process a Blender request using a pre-constructed blender command.
-    This function runs Blender to generate output files but doesn't handle S3 uploads.
-    The API handlers are responsible for uploading the generated files to S3.
-    
-    Args:
-        working_dir: Directory where processing will take place
-        blender_command: Pre-constructed Blender command as a list of arguments
-        output_files: List of output file configurations
-    
-    Returns:
-        List of processed output files that were successfully generated.
+    Run Blender and verify that every expected output file was actually generated.
+
+    Blender may exit with code 0 even when a Python script executed inside Blender
+    fails, so process success cannot be determined from the return code alone.
+
+    The API handlers remain responsible for uploading the generated files to S3.
     """
-    try:
-        # Validate parameters
-        if not working_dir:
-            raise ValueError("Working directory is required")
-        if not blender_command:
-            raise ValueError("Blender command is required")
-        if not output_files:
-            raise ValueError("At least one output file configuration is required")
 
-        # Create working directory if it doesn't exist
-        os.makedirs(working_dir, exist_ok=True)
-        
-        logger.info(f"Running Blender command: {' '.join(blender_command)}")
+    # Validate parameters
+    if not working_dir:
+        raise BlenderError("Working directory is required")
 
-        # Execute Blender command with retry logic
-        for attempt in range(3):
-            try:
-                # Set a timeout that is slightly less than typical cloud service timeouts
-                result = subprocess.run(
-                    blender_command,
-                    check=True,
-                    timeout=3500  # 58.3 minutes in seconds
+    if not blender_command:
+        raise BlenderError("Blender command is required")
+
+    if not output_files:
+        raise BlenderError("At least one output file configuration is required")
+
+    os.makedirs(working_dir, exist_ok=True)
+
+    logger.info(f"Running Blender command: {' '.join(blender_command)}")
+
+    max_attempts = 3
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            #
+            # IMPORTANT:
+            # Remove outputs from previous requests/attempts before running Blender.
+            #
+            # Otherwise a failed render could appear successful because an old
+            # room_render.png or mask_all_products.png still exists.
+            #
+            for output_file in output_files:
+                if os.path.exists(output_file.local_path):
+                    logger.info(
+                        f"Removing stale output file before Blender run: "
+                        f"{output_file.local_path}"
+                    )
+
+                    try:
+                        os.remove(output_file.local_path)
+                    except OSError as e:
+                        raise BlenderError(
+                            f"Could not remove stale output file "
+                            f"{output_file.local_path}: {e}"
+                        )
+
+            logger.info(
+                f"Starting Blender attempt {attempt}/{max_attempts}"
+            )
+
+            #
+            # Do NOT capture stdout/stderr here.
+            #
+            # Leaving them attached to the process allows Blender's output to
+            # continue appearing in kubectl logs, Loki, and Grafana.
+            #
+            result = subprocess.run(
+                blender_command,
+                timeout=3500
+            )
+
+            #
+            # First check the actual Blender process return code.
+            #
+            if result.returncode != 0:
+                raise BlenderError(
+                    f"Blender exited with non-zero status "
+                    f"{result.returncode}"
                 )
-                
-                logger.info(f"Blender processing complete")
-                break
-            
-            except subprocess.CalledProcessError as e:
-                error_msg = e.stderr if e.stderr else f"Process failed with code {e.returncode}"
-                logger.warning(f"Attempt {attempt + 1} failed: {error_msg}")
-                if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
-                else:
-                    raise BlenderError(f"All retry attempts failed: {error_msg}")
-            
-            except subprocess.TimeoutExpired as e:
-                error_msg = f"Blender process timed out after {e.timeout} seconds"
-                logger.warning(f"Attempt {attempt + 1} failed: {error_msg}")
-                if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
-                else:
-                    raise BlenderError(f"All retry attempts failed: {error_msg}")
-            
-            except Exception as e:
-                if attempt == 2:
-                    raise BlenderError(f"Failed to execute Blender: {str(e)}")
-                await asyncio.sleep(2 ** attempt)
 
-        # Check if output files were generated but don't upload them
-        processed_files = []
-        for output_file in output_files:
-            if os.path.exists(output_file.local_path):
-                processed_files.append(output_file)
-                logger.info(f"Generated output file {output_file.local_path}")
-            else:
-                logger.warning(f"Output file {output_file.local_path} does not exist.")
+            #
+            # Blender can return 0 even if the Python script failed.
+            # Therefore every expected output must also exist and be non-empty.
+            #
+            missing_outputs = []
+            empty_outputs = []
 
-        return processed_files
+            for output_file in output_files:
+                if not os.path.exists(output_file.local_path):
+                    missing_outputs.append(output_file.local_path)
+                    continue
 
-    except ValueError as e:
-        logger.error(f"Invalid parameters for Blender request: {str(e)}")
-        raise BlenderError(str(e))
-    except Exception as e:
-        logger.error(f"Error processing Blender request: {str(e)}", exc_info=True)
-        raise BlenderError(str(e))
+                if os.path.getsize(output_file.local_path) <= 0:
+                    empty_outputs.append(output_file.local_path)
+
+            if missing_outputs or empty_outputs:
+                error_parts = []
+
+                if missing_outputs:
+                    error_parts.append(
+                        "missing expected output(s): "
+                        + ", ".join(missing_outputs)
+                    )
+
+                if empty_outputs:
+                    error_parts.append(
+                        "empty expected output(s): "
+                        + ", ".join(empty_outputs)
+                    )
+
+                raise BlenderError(
+                    "Blender did not produce valid output: "
+                    + "; ".join(error_parts)
+                )
+
+            #
+            # At this point:
+            #
+            #   Blender exited successfully
+            #   AND
+            #   every expected file exists
+            #   AND
+            #   every expected file is non-empty
+            #
+            logger.info(
+                f"Blender processing complete on attempt "
+                f"{attempt}/{max_attempts}"
+            )
+
+            for output_file in output_files:
+                size = os.path.getsize(output_file.local_path)
+
+                logger.info(
+                    f"Generated output file "
+                    f"{output_file.local_path} "
+                    f"({size} bytes)"
+                )
+
+            return output_files
+
+        except subprocess.TimeoutExpired as e:
+            error_msg = (
+                f"Blender process timed out after "
+                f"{e.timeout} seconds"
+            )
+
+        except BlenderError as e:
+            error_msg = str(e)
+
+        except Exception as e:
+            error_msg = f"Unexpected Blender execution error: {e}"
+
+        logger.warning(
+            f"Blender attempt {attempt}/{max_attempts} failed: "
+            f"{error_msg}"
+        )
+
+        if attempt < max_attempts:
+            delay = 2 ** (attempt - 1)
+
+            logger.info(
+                f"Retrying Blender in {delay} second(s)"
+            )
+
+            await asyncio.sleep(delay)
+
+        else:
+            logger.error(
+                f"Blender processing failed after "
+                f"{max_attempts} attempts: {error_msg}"
+            )
+
+            raise BlenderError(
+                f"Blender processing failed after "
+                f"{max_attempts} attempts: {error_msg}"
+            )

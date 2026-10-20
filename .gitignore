@@ -59,9 +59,8 @@ logs/
 .settings/
 
 # Docker
-.dockerignore
-Dockerfile
 docker-compose.yml
+# Note: Root Dockerfile is for local dev, but ci/Dockerfile is needed for CI/CD
 
 # Blender files
 *.blend1
