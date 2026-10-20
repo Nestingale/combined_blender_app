@@ -582,41 +582,51 @@ def find_environment_texture():
     return selected
 
 def setup_gpu_rendering():
-    """Set up GPU rendering, with fallback to CPU if needed/configured"""
+    """Prefer OptiX, then CUDA, with optional CPU fallback."""
     try:
-        has_gpu = False
-        
-        bpy.context.preferences.addons["cycles"].preferences.compute_device_type = "CUDA"
-        bpy.context.preferences.addons["cycles"].preferences.refresh_devices()
-        cuda_devices = bpy.context.preferences.addons["cycles"].preferences.devices
-        
-        if not any(device.use for device in cuda_devices):
-            bpy.context.preferences.addons["cycles"].preferences.compute_device_type = "OPTIX"
-            bpy.context.preferences.addons["cycles"].preferences.refresh_devices()
-            optix_devices = bpy.context.preferences.addons["cycles"].preferences.devices
-            
-            has_gpu = any(device.use for device in optix_devices)
-        else:
-            has_gpu = True
-        
+        cycles_prefs = bpy.context.preferences.addons["cycles"].preferences
+
+        def enable_devices(device_type):
+            cycles_prefs.compute_device_type = device_type
+            cycles_prefs.refresh_devices()
+
+            enabled_gpu = False
+
+            for device in cycles_prefs.devices:
+                if device.type == device_type:
+                    device.use = True
+                    enabled_gpu = True
+                elif device.type == "CPU":
+                    device.use = False
+
+            return enabled_gpu
+
+        has_gpu = enable_devices("OPTIX")
+
+        if not has_gpu:
+            has_gpu = enable_devices("CUDA")
+
         if has_gpu:
             bpy.context.scene.cycles.device = "GPU"
-            print("GPU rendering enabled")
+            print(f"GPU rendering enabled using {cycles_prefs.compute_device_type}")
+            for device in cycles_prefs.devices:
+                print(f"Device: name={device.name}, type={device.type}, use={device.use}")
             return True
-        else:
-            if GPU_FALLBACK_TO_CPU:
-                print("No GPU detected. Falling back to CPU rendering.")
-                bpy.context.scene.cycles.device = "CPU"
-                return False
-            else:
-                raise RuntimeError("No GPU available and fallback to CPU is disabled")
-    except Exception as e:
+
         if GPU_FALLBACK_TO_CPU:
-            print(f"Error setting up GPU: {e}. Falling back to CPU rendering.")
+            print("No compatible GPU found. Falling back to CPU rendering.")
             bpy.context.scene.cycles.device = "CPU"
             return False
-        else:
-            raise RuntimeError(f"Failed to set up GPU rendering: {e}")
+
+        raise RuntimeError("No GPU available and fallback to CPU is disabled")
+
+    except Exception as e:
+        if GPU_FALLBACK_TO_CPU:
+            print(f"Error setting up GPU rendering: {e}. Falling back to CPU.")
+            bpy.context.scene.cycles.device = "CPU"
+            return False
+
+        raise RuntimeError(f"Failed to set up GPU rendering: {e}")
 
 def parse_camera_json(json_str):
     try:
@@ -1523,44 +1533,55 @@ if not args.skip_render:
         bpy.context.scene.render.resolution_percentage = CAMERA_PARAMS["resolution_percentage"]
     else:
         bpy.context.scene.render.resolution_percentage = RENDER_PARAMS["resolution_percentage"]
+
     bpy.context.scene.render.film_transparent = RENDER_PARAMS["film_transparent"]
-    
+
     bpy.context.scene.render.engine = 'CYCLES'
     bpy.context.scene.cycles.samples = RENDER_PARAMS["samples"]
     bpy.context.scene.cycles.preview_samples = RENDER_PARAMS["preview_samples"]
-    
+
     if USE_GPU and not args.force_cpu:
         setup_gpu_rendering()
     else:
         print("Using CPU for rendering")
         bpy.context.scene.cycles.device = 'CPU'
-    
+
     if USE_DENOISING:
         print("Enabling denoising for higher quality rendering")
+
         if hasattr(bpy.context.scene.cycles, 'use_denoising'):
             bpy.context.scene.cycles.use_denoising = True
+
             if hasattr(bpy.context.scene.cycles, 'denoiser'):
-                try:
-                    bpy.context.scene.cycles.denoiser = 'OPENIMAGEDENOISE'
-                    print("Using OpenImageDenoise denoiser")
-                except (TypeError, ValueError):
+                denoiser_set = False
+
+                for denoiser in ["OPTIX", "OPENIMAGEDENOISE"]:
                     try:
-                        bpy.context.scene.cycles = 'OPTIX'
-                        print("Using OptiX denoiser")
+                        bpy.context.scene.cycles.denoiser = denoiser
+                        print(f"Using {denoiser} denoiser")
+                        denoiser_set = True
+                        break
                     except (TypeError, ValueError):
-                        print("Warning: No compatible denoiser found. Denoising may not work properly.")
+                        pass
+
+                if not denoiser_set:
+                    print("Warning: No compatible denoiser found. Denoising may not work properly.")
+
             if hasattr(bpy.context.scene.cycles, 'denoising_strength'):
                 bpy.context.scene.cycles.denoising_strength = RENDER_PARAMS["denoising_strength"]
+
         else:
             bpy.context.view_layer.cycles.use_denoising = True
             bpy.context.view_layer.cycles.denoising_strength = RENDER_PARAMS["denoising_strength"]
+
     else:
         print("Denoising disabled")
+
         if hasattr(bpy.context.scene.cycles, 'use_denoising'):
             bpy.context.scene.cycles.use_denoising = False
         else:
             bpy.context.view_layer.cycles.use_denoising = False
-    
+
     bpy.context.scene.render.filepath = f'{args.outdir}/room_render.png'
     bpy.ops.render.render(write_still=True)
 
