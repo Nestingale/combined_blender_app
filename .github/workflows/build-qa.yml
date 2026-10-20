@@ -38,22 +38,18 @@ jobs:
             - name: Configure Harbor credentials
               shell: bash
               env:
-                  HARBOR_USERNAME: ${{ secrets.HARBOR_CI_USERNAME }}
-                  HARBOR_TOKEN: ${{ secrets.HARBOR_CI_TOKEN }}
+                HARBOR_USERNAME: ${{ secrets.HARBOR_CI_USERNAME }}
+                HARBOR_TOKEN: ${{ secrets.HARBOR_CI_TOKEN }}
               run: |
-                  mkdir -p "$HOME/.docker"
+                mkdir -p "$HOME/.docker"
 
-                  AUTH="$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_TOKEN" | base64 -w0)"
+                AUTH="$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_TOKEN" | base64 | tr -d '\n')"
 
-                  cat > "$HOME/.docker/config.json" <<EOF
-                  {
-                    "auths": {
-                      "registry.infra.nestingale.com": {
-                        "auth": "$AUTH"
-                      }
-                    }
-                  }
-                  EOF
+                printf '{"auths":{"registry.infra.nestingale.com":{"auth":"%s"}}}\n' \
+                    "$AUTH" > "$HOME/.docker/config.json"
+
+                python3 -m json.tool "$HOME/.docker/config.json" >/dev/null
+                echo "Docker auth config JSON is valid"
 
             - name: Build and push image
               shell: bash
