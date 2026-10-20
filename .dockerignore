@@ -43,3 +43,19 @@ Dockerfile
 .DS_Store
 **/.DS_Store
 **/Thumbs.db
+
+# NEW
+.git
+.github
+.env
+.env.*
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+venv
+logs
+working_data
+app/scripts/**/generated_files/*
+app/scripts/**/input/*

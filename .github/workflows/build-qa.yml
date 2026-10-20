@@ -1,0 +1,76 @@
+name: Build Blender API QA
+
+on:
+    workflow_dispatch:
+    push:
+        branches:
+            - main
+
+jobs:
+    build:
+        runs-on: nestingale-runners
+
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install BuildKit client
+              shell: bash
+              run: |
+                  BUILDKIT_VERSION="v0.26.2"
+
+                  curl -fsSL \
+                    "https://github.com/moby/buildkit/releases/download/${BUILDKIT_VERSION}/buildkit-${BUILDKIT_VERSION}.linux-amd64.tar.gz" \
+                    -o /tmp/buildkit.tar.gz
+
+                  tar -xzf /tmp/buildkit.tar.gz -C /tmp
+
+                  sudo install \
+                    -m 0755 \
+                    /tmp/bin/buildctl \
+                    /usr/local/bin/buildctl
+
+                  buildctl --version
+
+            - name: Configure Harbor credentials
+              shell: bash
+              env:
+                  HARBOR_USERNAME: ${{ secrets.HARBOR_CI_USERNAME }}
+                  HARBOR_TOKEN: ${{ secrets.HARBOR_CI_TOKEN }}
+              run: |
+                  mkdir -p "$HOME/.docker"
+
+                  AUTH="$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_TOKEN" | base64 -w0)"
+
+                  cat > "$HOME/.docker/config.json" <<EOF
+                  {
+                    "auths": {
+                      "registry.infra.nestingale.com": {
+                        "auth": "$AUTH"
+                      }
+                    }
+                  }
+                  EOF
+
+            - name: Build and push image
+              shell: bash
+              env:
+                  BUILDKIT_HOST: tcp://buildkit.arc-runners.svc.cluster.local:1234
+                  IMAGE: registry.infra.nestingale.com/nestingale/combined-blender-app
+              run: |
+                  buildctl build \
+                    --frontend dockerfile.v0 \
+                    --local context=. \
+                    --local dockerfile=. \
+                    --output "type=image,name=${IMAGE}:${GITHUB_SHA},push=true" \
+                    --output "type=image,name=${IMAGE}:qa,push=true"
+
+            - name: Show image tags
+              shell: bash
+              run: |
+                  echo "Built:"
+                  echo "registry.infra.nestingale.com/nestingale/combined-blender-app:${GITHUB_SHA}"
+                  echo "registry.infra.nestingale.com/nestingale/combined-blender-app:qa"
